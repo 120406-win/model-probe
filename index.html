@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>模型体检 · API 可用性检测</title>
+<style>
+  :root{
+    --bg:#0b1026; --card:#151b38; --card2:#1a2145; --line:#2a3260;
+    --text:#eef0ff; --muted:#9aa3d0; --accent:#8b7ff0; --accent2:#f2a7c3;
+    --ok:#3ecf8e; --bad:#ff6b81; --warn:#ffb84d; --radius:16px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:radial-gradient(1200px 600px at 80% -10%, #232a5e 0%, transparent 60%),
+               radial-gradient(900px 500px at -10% 110%, #2c1e4e 0%, transparent 55%), var(--bg);
+    color:var(--text); min-height:100vh; padding:18px 14px 40px;}
+  .wrap{max-width:760px; margin:0 auto}
+  h1{font-size:21px; margin:4px 0 2px; font-weight:700; letter-spacing:.5px}
+  .sub{color:var(--muted); font-size:12.5px; margin-bottom:14px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:12px}
+  label{display:block; font-size:12px; color:var(--muted); margin:10px 0 5px}
+  label:first-child{margin-top:0}
+  input[type=text],input[type=password],select{
+    width:100%; padding:11px 12px; border-radius:12px; border:1px solid var(--line);
+    background:var(--card2); color:var(--text); font-size:14px; outline:none}
+  input:focus,select:focus{border-color:var(--accent)}
+  .row{display:flex; gap:8px; flex-wrap:wrap}
+  .row>*{flex:1}
+  button{appearance:none; border:1px solid var(--line); background:var(--card2); color:var(--text);
+    padding:11px 12px; border-radius:12px; font-size:14px; cursor:pointer; transition:transform .15s cubic-bezier(.34,1.56,.64,1)}
+  button:active{transform:scale(.94)}
+  button.primary{background:linear-gradient(135deg, var(--accent), #6a5ae0); border-color:transparent; font-weight:600}
+  button.pink{background:linear-gradient(135deg, #e58bb1, var(--accent2)); border-color:transparent; color:#2a1030; font-weight:600}
+  button:disabled{opacity:.45; pointer-events:none}
+  .note{font-size:11.5px; color:var(--muted); line-height:1.6; margin-top:10px}
+  .summary{display:flex; gap:14px; flex-wrap:wrap; font-size:13px; align-items:center}
+  .summary b{font-size:17px}
+  .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+  .toolbar{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px}
+  .toolbar button{flex:0 0 auto; padding:9px 13px; font-size:13px}
+  .search{margin-bottom:10px}
+  .mrow{display:flex; align-items:center; gap:9px; padding:10px 10px; border:1px solid var(--line);
+    border-radius:12px; margin-bottom:8px; background:var(--card2)}
+  .mrow input[type=checkbox]{width:18px; height:18px; accent-color:var(--accent); flex:0 0 auto}
+  .mid{flex:1; min-width:0}
+  .mname{font-size:13.5px; word-break:break-all; line-height:1.35}
+  .mdetail{font-size:11.5px; color:var(--muted); margin-top:2px; word-break:break-all; line-height:1.5}
+  .mdetail.err{color:#ff9fb0}
+  .badge{flex:0 0 auto; font-size:11.5px; padding:4px 9px; border-radius:999px; border:1px solid var(--line); color:var(--muted); white-space:nowrap}
+  .badge.ok{color:#06281a; background:var(--ok); border-color:transparent; font-weight:700}
+  .badge.bad{color:#fff; background:var(--bad); border-color:transparent; font-weight:700}
+  .badge.busy{color:#2a1a00; background:var(--warn); border-color:transparent; font-weight:700}
+  .pin,.one{flex:0 0 auto; padding:6px 8px; font-size:14px; border-radius:9px; line-height:1}
+  .pin.on{background:var(--accent); border-color:transparent}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:22px 0}
+  .spin{display:inline-block; width:11px; height:11px; border:2px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%; animation:sp .7s linear infinite; vertical-align:-1px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>模型体检</h1>
+  <div class="sub">给中转站的模型挨个探活：哪个通、哪个挂、挂在哪，一眼看清。</div>
+
+  <div class="card">
+    <label>站点地址（Base URL）</label>
+    <input type="text" id="base" placeholder="https://mengmenguu.top/v1" autocomplete="off">
+    <label>API Key</label>
+    <input type="password" id="key" placeholder="sk-..." autocomplete="off">
+    <div class="row" style="margin-top:12px">
+      <div>
+        <label style="margin-top:0">接口格式</label>
+        <select id="fmt">
+          <option value="auto">自动（先 OpenAI，格式不对再换 Anthropic）</option>
+          <option value="openai">OpenAI 格式</option>
+          <option value="anthropic">Anthropic 格式</option>
+        </select>
+      </div>
+      <div style="display:flex; align-items:flex-end">
+        <button class="primary" id="btnModels" style="width:100%">拉取模型列表</button>
+      </div>
+    </div>
+    <div class="note">Key 只保存在你这台设备的浏览器里，不写进网页代码、不上传到任何别的地方。每次「探活」会对那个模型发一句最小的 ping（max_tokens=1），按次计费的站等于花一次最小调用。</div>
+  </div>
+
+  <div class="card" id="sumCard" style="display:none">
+    <div class="summary">
+      <span>共 <b id="sTotal">0</b></span>
+      <span class="ok">通 <b id="sOk">0</b></span>
+      <span class="bad">挂 <b id="sBad">0</b></span>
+      <span>未测 <b id="sIdle">0</b></span>
+      <span style="color:var(--muted); font-size:12px" id="sTime"></span>
+    </div>
+  </div>
+
+  <div class="toolbar" id="toolbar" style="display:none">
+    <button class="pink" id="btnAll">全部检测</button>
+    <button id="btnChecked">检测勾选</button>
+    <button id="btnPins">只测收藏 ★</button>
+    <button id="btnStop" disabled>停止</button>
+  </div>
+
+  <input type="text" class="search" id="search" placeholder="搜模型名…" style="display:none">
+  <div id="list"></div>
+  <div class="empty" id="empty">先填好地址和 Key，点「拉取模型列表」</div>
+
+  <div class="card" id="verifyCard">
+    <div style="font-size:15px; font-weight:700; margin-bottom:4px">模型验真</div>
+    <div class="note" style="margin-top:0">给单个模型出 10 道「指纹题」：旗舰模型稳过的题，便宜小模型会露馅。答得越不像旗舰，掺水嫌疑越大。注意：这是能力指纹，不是铁证——分数低是强烈的可疑信号，分数高也只能说明它现在表现达标。</div>
+    <label>要验的模型（先拉列表，或直接输入完整模型名）</label>
+    <input type="text" id="vTarget" list="vModels" placeholder="例如 0.6/3claude-sonnet-5-5">
+    <datalist id="vModels"></datalist>
+    <label>它自称是哪家（身份题对照用）</label>
+    <select id="vFamily">
+      <option value="">不指定，只测能力</option>
+      <option value="claude">Claude（Anthropic）</option>
+      <option value="gpt">GPT（OpenAI）</option>
+      <option value="gemini">Gemini（Google）</option>
+      <option value="deepseek">DeepSeek</option>
+      <option value="qwen">通义千问（阿里）</option>
+      <option value="glm">智谱 GLM</option>
+      <option value="kimi">Kimi（月之暗面）</option>
+    </select>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="btnVerify">开始验真（约 10 次调用）</button>
+      <button id="btnVerifyStop" disabled>停止</button>
+    </div>
+    <div id="vProgress" class="note"></div>
+    <div id="vVerdict" style="margin-top:10px"></div>
+    <div id="vResults" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card" id="fpCard">
+    <div style="font-size:15px; font-weight:700; margin-bottom:4px">指纹对照</div>
+    <div class="note" style="margin-top:0">原理像笔迹鉴定：先让「真品」模型答一套指纹题存成样本，再让被测模型答同一套，逐题比对像不像。能回答「这个渠道的 X，像不像真品 X」，回答不了「它到底是谁」；参照物本身若不真，结论会跟着歪。</div>
+    <label>参考站地址（真品来源）</label>
+    <input type="text" id="fpRefBase" placeholder="https://modelrouter.fun/v1" autocomplete="off">
+    <label>参考站 API Key</label>
+    <input type="password" id="fpRefKey" placeholder="参考站的 sk-..." autocomplete="off">
+    <label>真品模型（参考站里的完整模型名）</label>
+    <div class="row">
+      <input type="text" id="fpRefModel" list="fpRefModels" placeholder="先拉参考站模型列表，或直接输入">
+      <button id="btnRefModels" style="flex:0 0 auto">拉参考站模型</button>
+    </div>
+    <datalist id="fpRefModels"></datalist>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="btnBuildSample">① 建立真品样本（约 13 次调用）</button>
+    </div>
+    <div class="note" id="fpSampleInfo">还没有真品样本</div>
+    <label>被测模型（用上方主站的地址和 Key，填它的完整模型名）</label>
+    <input type="text" id="fpTestModel" list="vModels" placeholder="例如 0.4/2.8claude-sonnet-4-6">
+    <div class="row" style="margin-top:12px">
+      <button class="pink" id="btnCompare">② 开始对照（约 13 次调用）</button>
+      <button id="btnFpStop" disabled>停止</button>
+    </div>
+    <div id="fpProgress" class="note"></div>
+    <div id="fpVerdict" style="margin-top:10px"></div>
+    <div id="fpResults" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+var $ = function(id){ return document.getElementById(id); };
+var models = [];           // [{id}]
+var state = {};            // id -> {st:'idle|busy|ok|bad', ms, msg}
+var running = false, stopFlag = false;
+
+function lsGet(k, d){ try{ var v = localStorage.getItem(k); return v==null? d : JSON.parse(v); }catch(e){ return d; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+function pins(){ return lsGet('probe_pins', []); }
+function setPin(id, on){ var p = pins().filter(function(x){ return x!==id; }); if(on) p.push(id); lsSet('probe_pins', p); }
+
+$('base').value = lsGet('probe_base', 'https://mengmenguu.top/v1');
+$('key').value  = lsGet('probe_key', '');
+$('fmt').value  = lsGet('probe_fmt', 'auto');
+['base','key','fmt'].forEach(function(id){
+  $(id).addEventListener('change', function(){
+    lsSet('probe_base', $('base').value.trim()); lsSet('probe_key', $('key').value.trim()); lsSet('probe_fmt', $('fmt').value);
+  });
+});
+function base(){ return $('base').value.trim().replace(/\/+$/,''); }
+function key(){ return $('key').value.trim(); }
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+function render(){
+  var q = $('search').value.trim().toLowerCase();
+  var p = pins();
+  var sorted = models.slice().sort(function(a,b){
+    var pa = p.indexOf(a.id)>=0?0:1, pb = p.indexOf(b.id)>=0?0:1;
+    if(pa!==pb) return pa-pb; return a.id<b.id?-1:1;
+  });
+  var html = '';
+  sorted.forEach(function(m){
+    if(q && m.id.toLowerCase().indexOf(q)<0) return;
+    var s = state[m.id] || {st:'idle'};
+    var badge = s.st==='ok' ? '<span class="badge ok">通 ' + s.ms + 'ms</span>'
+      : s.st==='bad' ? '<span class="badge bad">挂</span>'
+      : s.st==='busy' ? '<span class="badge busy"><span class="spin"></span> 测中</span>'
+      : '<span class="badge">未测</span>';
+    var detail = s.st==='bad' ? '<div class="mdetail err">' + esc(s.msg) + '</div>'
+      : s.st==='ok' ? '<div class="mdetail">延迟 ' + s.ms + 'ms' + (s.via? ' · ' + esc(s.via) : '') + '</div>' : '';
+    html += '<div class="mrow">'
+      + '<input type="checkbox" data-act="chk" data-id="' + esc(m.id) + '" checked>'
+      + '<div class="mid"><div class="mname">' + esc(m.id) + '</div>' + detail + '</div>'
+      + badge
+      + '<button class="pin' + (p.indexOf(m.id)>=0?' on':'') + '" data-act="pin" data-id="' + esc(m.id) + '" title="收藏">★</button>'
+      + '<button class="one" data-act="one" data-id="' + esc(m.id) + '">测</button>'
+      + '</div>';
+  });
+  $('list').innerHTML = html || '<div class="empty">没有匹配的模型</div>';
+  var t = models.length, ok=0, bad=0, idle=0;
+  models.forEach(function(m){ var s = state[m.id]; if(!s||s.st==='idle') idle++; else if(s.st==='ok') ok++; else if(s.st==='bad') bad++; else idle++; });
+  $('sTotal').textContent = t; $('sOk').textContent = ok; $('sBad').textContent = bad; $('sIdle').textContent = idle;
+  $('sumCard').style.display = t? 'block':'none';
+  $('empty').style.display = t? 'none':'block';
+}
+$('list').addEventListener('click', function(e){
+  var b = e.target.closest('[data-act]'); if(!b) return;
+  var id = b.getAttribute('data-id'), act = b.getAttribute('data-act');
+  if(act==='pin'){ setPin(id, pins().indexOf(id)<0); render(); }
+  if(act==='one'){ probeMany([id]); }
+});
+$('search').addEventListener('input', render);
+
+function fetchWithTimeout(url, opts, ms){
+  var c = new AbortController(); var t = setTimeout(function(){ c.abort(); }, ms);
+  opts.signal = c.signal;
+  return fetch(url, opts).finally(function(){ clearTimeout(t); });
+}
+function errText(j, fallback){
+  try{ if(j && j.error && j.error.message) return j.error.message; if(j && j.message) return j.message; }catch(e){}
+  return fallback;
+}
+function classify(status, msg){
+  var m = String(msg||'');
+  if(status===401 || status===403) return 'Key 被拒（' + status + '）：' + m.slice(0,120);
+  if(status===429) return '限流（429）：' + m.slice(0,120);
+  if(/无可用渠道|no available|model_not_found|不存在|not found/i.test(m) && status!==404) return '上游无可用渠道（' + status + '）：' + m.slice(0,120);
+  if(status===404) return '接口 404（多半是格式/地址不对）：' + m.slice(0,120);
+  if(status>=500) return '上游错误（' + status + '）：' + m.slice(0,120);
+  return 'HTTP ' + status + '：' + m.slice(0,140);
+}
+async function probeOnce(id, fmt){
+  var t0 = Date.now();
+  var isAnth = fmt==='anthropic';
+  var url = base() + (isAnth? '/messages' : '/chat/completions');
+  var headers = {'Content-Type':'application/json'};
+  if(isAnth){ headers['x-api-key'] = key(); headers['anthropic-version'] = '2023-06-01'; }
+  else { headers['Authorization'] = 'Bearer ' + key(); }
+  var body = { model:id, max_tokens:1, messages:[{role:'user', content:'ping'}] };
+  var resp = await fetchWithTimeout(url, {method:'POST', headers:headers, body:JSON.stringify(body)}, 25000);
+  var txt = await resp.text();
+  var j = null; try{ j = JSON.parse(txt); }catch(e){}
+  var ms = Date.now()-t0;
+  if(resp.ok) return {ok:true, ms:ms, via: isAnth?'Anthropic':'OpenAI'};
+  return {ok:false, status:resp.status, msg: errText(j, txt.slice(0,160))};
+}
+async function probe(id){
+  state[id] = {st:'busy'}; render();
+  var fmt = $('fmt').value;
+  try{
+    var r;
+    if(fmt==='auto'){
+      r = await probeOnce(id, 'openai');
+      if(!r.ok && (r.status===404 || (r.status===400 && /chat|completion|endpoint|unsupported|invalid/i.test(r.msg||'')))){
+        r = await probeOnce(id, 'anthropic');
+      }
+    } else {
+      r = await probeOnce(id, fmt);
+    }
+    if(r.ok) state[id] = {st:'ok', ms:r.ms, via:r.via};
+    else state[id] = {st:'bad', msg: classify(r.status, r.msg)};
+  }catch(e){
+    state[id] = {st:'bad', msg: (e && e.name==='AbortError')? '超时（25 秒没应答）' : '网络错误：' + (e && e.message || e)};
+  }
+  render();
+}
+async function probeMany(ids){
+  if(running) return;
+  if(!key()){ alert('先填 API Key'); return; }
+  running = true; stopFlag = false; $('btnStop').disabled = false;
+  var queue = ids.slice(), workers = [];
+  function next(){
+    if(stopFlag || !queue.length) return Promise.resolve();
+    var id = queue.shift();
+    return probe(id).then(next);
+  }
+  for(var i=0;i<Math.min(3, ids.length);i++) workers.push(next());
+  await Promise.all(workers);
+  running = false; $('btnStop').disabled = true;
+  $('sTime').textContent = '上次检测 ' + new Date().toLocaleTimeString();
+  render();
+}
+$('btnStop').addEventListener('click', function(){ stopFlag = true; });
+
+$('btnModels').addEventListener('click', async function(){
+  if(!key()){ alert('先填 API Key'); return; }
+  lsSet('probe_base', base()); lsSet('probe_key', key());
+  $('btnModels').disabled = true; $('btnModels').textContent = '拉取中…';
+  try{
+    var resp = await fetchWithTimeout(base() + '/models', {headers:{'Authorization':'Bearer ' + key()}}, 20000);
+    var j = await resp.json().catch(function(){ return null; });
+    if(!resp.ok) throw new Error(classify(resp.status, errText(j, '')));
+    var arr = (j && j.data) || [];
+    models = arr.map(function(x){ return {id: x.id}; }).filter(function(x){ return x.id; });
+    if(!models.length) throw new Error('模型列表是空的');
+    state = {};
+    $('toolbar').style.display = 'flex'; $('search').style.display = 'block';
+    render();
+  }catch(e){ alert('拉取失败：' + (e && e.message || e)); }
+  $('btnModels').disabled = false; $('btnModels').textContent = '拉取模型列表';
+});
+$('btnAll').addEventListener('click', function(){ probeMany(models.map(function(m){ return m.id; })); });
+$('btnChecked').addEventListener('click', function(){
+  var ids = Array.prototype.map.call(document.querySelectorAll('[data-act="chk"]:checked'), function(c){ return c.getAttribute('data-id'); });
+  probeMany(ids);
+});
+$('btnPins').addEventListener('click', function(){
+  var ids = pins().filter(function(id){ return models.some(function(m){ return m.id===id; }); });
+  if(!ids.length){ alert('还没收藏模型：点模型右边的 ★ 先收藏你常用的'); return; }
+  probeMany(ids);
+});
+
+// ══ 模型验真 ══
+var vRunning = false, vStop = false;
+$('vTarget').addEventListener('focus', function(){
+  $('vModels').innerHTML = models.map(function(m){ return '<option value="' + esc(m.id) + '">'; }).join('');
+});
+function firstInt(s){ var m = String(s||'').match(/-?\d+/); return m? parseInt(m[0],10) : null; }
+function cleanAns(s){ return String(s||'').trim().replace(/^[「『"'\s]+|[」』"'\s。\.]+$/g,''); }
+var BATTERY = [
+  { name:'数字母', q:"How many times does the letter 'r' appear in the word 'strawberry'? Reply with only the number.",
+    grade:function(a){ return firstInt(a)===3; }, expect:'3' },
+  { name:'小数比较', q:"9.11 和 9.9 哪个大？只回答更大的那个数字，不要解释。",
+    grade:function(a){ return /9\.9/.test(a) && !/9\.11\s*(大|bigger|>|＞)/.test(a); }, expect:'9.9' },
+  { name:'倒序输出', q:"请把'人工智能'这四个字倒序输出，只输出倒序后的四个字，不要任何其他内容。",
+    grade:function(a){ return cleanAns(a)==='能智工人'; }, expect:'能智工人' },
+  { name:'定位截取', q:"只输出这句话中第三个逗号后面的全部内容，不要多输出任何字：'苹果，香蕉，橙子，葡萄，西瓜'",
+    grade:function(a){ return a.indexOf('葡萄')>=0 && a.indexOf('西瓜')>=0 && a.indexOf('苹果')<0 && a.indexOf('香蕉')<0 && a.indexOf('橙子')<0; }, expect:'葡萄，西瓜' },
+  { name:'数字数', q:"这句话里有几个'的'字？只回答数字：'他的书的封面是红的，我的朋友的也是。'",
+    grade:function(a){ return firstInt(a)===5; }, expect:'5' },
+  { name:'鸡兔同笼', q:"笼子里鸡和兔一共 10 只头、28 只脚。鸡有几只？只回答数字。",
+    grade:function(a){ return firstInt(a)===6; }, expect:'6' },
+  { name:'亲属逻辑', q:"小明有 3 个哥哥和 3 个姐姐。请问：小明的姐姐有几个兄弟？只回答数字。",
+    grade:function(a){ return firstInt(a)===4; }, expect:'4' },
+  { name:'格式服从', q:"用恰好三句话介绍月亮，每句话都必须以'月'字开头。三句话之外不要输出任何内容。",
+    grade:function(a){ var parts = String(a||'').split(/[。！？!?]+/).map(function(x){ return x.trim(); }).filter(Boolean); return parts.length===3 && parts.every(function(x){ return x.charAt(0)==='月'; }); }, expect:'恰好三句、每句以「月」开头' },
+  { name:'知识时效', q:"2024 年诺贝尔文学奖得主是谁？只回答其名字（中文或英文均可）。",
+    grade:function(a){ return /韩江|Han Kang/i.test(a); }, expect:'韩江（Han Kang）' },
+  { name:'身份自述', info:true, q:"你是什么模型？由哪家公司开发？用一句话回答。",
+    grade:function(a){ return null; }, expect:'看它自报的家门与你选的「自称哪家」对不对得上' }
+];
+var FAMILY_WORDS = { claude:/claude|anthropic/i, gpt:/gpt|openai/i, gemini:/gemini|google/i, deepseek:/deepseek/i, qwen:/通义|千问|qwen|阿里/i, glm:/glm|智谱/i, kimi:/kimi|月之暗面|moonshot/i };
+async function chatCall(id, prompt, fmt){
+  var isAnth = fmt==='anthropic';
+  var url = base() + (isAnth? '/messages' : '/chat/completions');
+  var headers = {'Content-Type':'application/json'};
+  if(isAnth){ headers['x-api-key'] = key(); headers['anthropic-version'] = '2023-06-01'; }
+  else { headers['Authorization'] = 'Bearer ' + key(); }
+  var body = { model:id, max_tokens:800, messages:[{role:'user', content:prompt}] };
+  var resp = await fetchWithTimeout(url, {method:'POST', headers:headers, body:JSON.stringify(body)}, 45000);
+  var txt = await resp.text();
+  var j = null; try{ j = JSON.parse(txt); }catch(e){}
+  if(!resp.ok) return {ok:false, status:resp.status, msg: errText(j, txt.slice(0,160))};
+  var out = '';
+  if(isAnth){ try{ out = (j.content||[]).map(function(c){ return c.text||''; }).join(''); }catch(e){} }
+  else { try{ out = j.choices[0].message.content || ''; }catch(e){} }
+  return {ok:true, text:String(out), model: j && j.model};
+}
+async function chatCallAuto(id, prompt){
+  var fmt = $('fmt').value;
+  if(fmt!=='auto') return chatCall(id, prompt, fmt);
+  var r = await chatCall(id, prompt, 'openai');
+  if(!r.ok && (r.status===404 || (r.status===400 && /chat|completion|endpoint|unsupported|invalid/i.test(r.msg||'')))) r = await chatCall(id, prompt, 'anthropic');
+  return r;
+}
+$('btnVerifyStop').addEventListener('click', function(){ vStop = true; });
+$('btnVerify').addEventListener('click', async function(){
+  if(vRunning) return;
+  var target = $('vTarget').value.trim();
+  if(!target){ alert('先选或输入要验的模型'); return; }
+  if(!key()){ alert('先填 API Key'); return; }
+  vRunning = true; vStop = false;
+  $('btnVerify').disabled = true; $('btnVerifyStop').disabled = false;
+  $('vResults').innerHTML = ''; $('vVerdict').innerHTML = '';
+  var fam = $('vFamily').value;
+  var score = 0, scored = 0, returnedModels = {};
+  for(var i=0;i<BATTERY.length;i++){
+    if(vStop){ $('vProgress').textContent = '已停止'; break; }
+    var item = BATTERY[i];
+    $('vProgress').textContent = '验真中 ' + (i+1) + '/' + BATTERY.length + '：' + item.name + '…';
+    var r;
+    try{ r = await chatCallAuto(target, item.q); }
+    catch(e){ r = {ok:false, msg: (e && e.name==='AbortError')? '超时' : ('网络错误：' + (e && e.message || e))}; }
+    var rowHtml;
+    if(!r.ok){
+      rowHtml = '<div class="mrow"><div class="mid"><div class="mname">' + (i+1) + '. ' + esc(item.name) + '</div><div class="mdetail err">调用失败：' + esc(classify(r.status||0, r.msg)) + '</div></div><span class="badge bad">失败</span></div>';
+      if(!item.info) scored++;
+    } else {
+      if(r.model) returnedModels[r.model] = true;
+      var g = item.grade(r.text);
+      var badge, detail = '<div class="mdetail">期望：' + esc(item.expect) + '<br>它答：' + esc(r.text.slice(0,220)) + '</div>';
+      if(item.info){
+        var warn = '';
+        if(fam && FAMILY_WORDS[fam] && !FAMILY_WORDS[fam].test(r.text)) warn = '<div class="mdetail err">⚠ 自报家门与所选家族对不上，可疑</div>';
+        else if(fam) warn = '<div class="mdetail">自报家门对得上（但身份可以伪造，仅供参考）</div>';
+        badge = '<span class="badge">参考</span>'; detail += warn;
+      } else if(g){ score++; scored++; badge = '<span class="badge ok">过</span>'; }
+      else { scored++; badge = '<span class="badge bad">露馅</span>'; }
+      rowHtml = '<div class="mrow"><div class="mid"><div class="mname">' + (i+1) + '. ' + esc(item.name) + '</div>' + detail + '</div>' + badge + '</div>';
+    }
+    $('vResults').insertAdjacentHTML('beforeend', rowHtml);
+  }
+  if(!vStop){
+    $('vProgress').textContent = '验真完成';
+    var verdict, cls;
+    if(scored===0){ verdict = '一道题都没测成，先看上面失败原因（多半是模型本身已挂或 Key 问题）'; cls='warn'; }
+    else if(score>=scored-1){ verdict = '得分 ' + score + '/' + scored + '：表现符合旗舰水准，没闻到掺水味'; cls='ok'; }
+    else if(score>=scored-3){ verdict = '得分 ' + score + '/' + scored + '：基本达标，但有旗舰不该错的题错了，留意是否轻微降智'; cls='warn'; }
+    else if(score>=Math.ceil(scored/2)){ verdict = '得分 ' + score + '/' + scored + '：可疑，能力明显缩水，不像它自称的旗舰'; cls='warn'; }
+    else { verdict = '得分 ' + score + '/' + scored + '：大概率掺水——这水平更像便宜小模型顶替的'; cls='bad'; }
+    var rm = Object.keys(returnedModels);
+    var rmNote = rm.length? '<div class="mdetail" style="margin-top:4px">接口返回的 model 字段：' + esc(rm.join('、')) + (rm.some(function(x){ return x!==target; })? '（与所请求的名字不完全一致，留意）':'') + '</div>' : '';
+    $('vVerdict').innerHTML = '<div class="' + cls + '" style="font-size:15px; font-weight:700">' + esc(verdict) + '</div>' + rmNote;
+  }
+  vRunning = false; $('btnVerify').disabled = false; $('btnVerifyStop').disabled = true;
+});
+
+
+// ══ 指纹对照 ══
+function bigramSim(a, b){
+  function grams(s){ s = String(s||'').replace(/\s+/g,''); var g = {}; for(var i=0;i<s.length-1;i++){ g[s.slice(i,i+2)] = 1; } return g; }
+  var ga = grams(a), gb = grams(b), ka = Object.keys(ga), kb = Object.keys(gb);
+  if(!ka.length || !kb.length) return 0;
+  var inter = 0; ka.forEach(function(k){ if(gb[k]) inter++; });
+  return inter / (ka.length + kb.length - inter);
+}
+var FP_ITEMS = [
+  { key:'r',    name:'数字母',   type:'exact', q:"How many times does the letter 'r' appear in the word 'strawberry'? Reply with only the number.", val:function(a){ return String(firstInt(a)); } },
+  { key:'num',  name:'小数比较', type:'exact', q:"9.11 和 9.9 哪个大？只回答更大的那个数字，不要解释。", val:function(a){ return /9\.9/.test(a)? '9.9' : (/9\.11/.test(a)? '9.11':'?'); } },
+  { key:'rev',  name:'倒序输出', type:'exact', q:"请把'人工智能'这四个字倒序输出，只输出倒序后的四个字，不要任何其他内容。", val:function(a){ return cleanAns(a); } },
+  { key:'cut',  name:'定位截取', type:'exact', q:"只输出这句话中第三个逗号后面的全部内容，不要多输出任何字：'苹果，香蕉，橙子，葡萄，西瓜'", val:function(a){ return cleanAns(a); } },
+  { key:'de',   name:'数字数',   type:'exact', q:"这句话里有几个'的'字？只回答数字：'他的书的封面是红的，我的朋友的也是。'", val:function(a){ return String(firstInt(a)); } },
+  { key:'chk',  name:'鸡兔同笼', type:'exact', q:"笼子里鸡和兔一共 10 只头、28 只脚。鸡有几只？只回答数字。", val:function(a){ return String(firstInt(a)); } },
+  { key:'kin',  name:'亲属逻辑', type:'exact', q:"小明有 3 个哥哥和 3 个姐姐。请问：小明的姐姐有几个兄弟？只回答数字。", val:function(a){ return String(firstInt(a)); } },
+  { key:'nob',  name:'知识时效', type:'exact', q:"2024 年诺贝尔文学奖得主是谁？只回答其名字（中文或英文均可）。", val:function(a){ return /韩江/.test(a)? '韩江' : (/Han Kang/i.test(a)? 'Han Kang' : cleanAns(a).slice(0,20)); } },
+  { key:'pick', name:'直觉数字', type:'exact', q:"凭直觉在 1 到 100 之间选一个数字，只回答数字，不要解释。", val:function(a){ return String(firstInt(a)); } },
+  { key:'col',  name:'直觉颜色', type:'exact', q:"凭直觉说一种颜色，只回答颜色名，不要解释。", val:function(a){ return cleanAns(a).slice(0,10); } },
+  { key:'moon', name:'格式与文风', type:'text', q:"用恰好三句话介绍月亮，每句话都必须以'月'字开头。三句话之外不要输出任何内容。", val:function(a){ return String(a||''); } },
+  { key:'tr',   name:'翻译习惯', type:'text', q:"把这句话翻译成英文，只输出译文：'今天天气不错，我们去公园散步吧。'", val:function(a){ return String(a||''); } },
+  { key:'idn',  name:'身份自述', type:'text', q:"你是什么模型？由哪家公司开发？用一句话回答。", val:function(a){ return String(a||''); } }
+];
+async function chatCallAt(b, k, id, prompt, fmt){
+  var isAnth = fmt==='anthropic';
+  var url = b.replace(/\/+$/,'') + (isAnth? '/messages' : '/chat/completions');
+  var headers = {'Content-Type':'application/json'};
+  if(isAnth){ headers['x-api-key'] = k; headers['anthropic-version'] = '2023-06-01'; }
+  else { headers['Authorization'] = 'Bearer ' + k; }
+  var resp = await fetchWithTimeout(url, {method:'POST', headers:headers, body:JSON.stringify({model:id, max_tokens:800, messages:[{role:'user', content:prompt}]})}, 45000);
+  var txt = await resp.text();
+  var j = null; try{ j = JSON.parse(txt); }catch(e){}
+  if(!resp.ok) return {ok:false, status:resp.status, msg: errText(j, txt.slice(0,160))};
+  var out = '';
+  if(isAnth){ try{ out = (j.content||[]).map(function(c){ return c.text||''; }).join(''); }catch(e){} }
+  else { try{ out = j.choices[0].message.content || ''; }catch(e){} }
+  return {ok:true, text:String(out), model: j && j.model};
+}
+async function chatCallAutoAt(b, k, id, prompt){
+  var fmt = $('fmt').value;
+  if(fmt!=='auto') return chatCallAt(b, k, id, prompt, fmt);
+  var r = await chatCallAt(b, k, id, prompt, 'openai');
+  if(!r.ok && (r.status===404 || (r.status===400 && /chat|completion|endpoint|unsupported|invalid/i.test(r.msg||'')))) r = await chatCallAt(b, k, id, prompt, 'anthropic');
+  return r;
+}
+$('fpRefBase').value = lsGet('probe_ref_base', 'https://modelrouter.fun/v1');
+$('fpRefKey').value = lsGet('probe_ref_key', '');
+['fpRefBase','fpRefKey'].forEach(function(id){ $(id).addEventListener('change', function(){ lsSet('probe_ref_base', $('fpRefBase').value.trim()); lsSet('probe_ref_key', $('fpRefKey').value.trim()); }); });
+function fpSample(){ return lsGet('probe_fp_sample', null); }
+function showSampleInfo(){
+  var s = fpSample();
+  $('fpSampleInfo').textContent = s? ('已有真品样本：' + s.model + '（来自 ' + s.base + '，建于 ' + new Date(s.ts).toLocaleString() + '）。换真品模型后需重建。') : '还没有真品样本';
+}
+$('btnRefModels').addEventListener('click', async function(){
+  var b = $('fpRefBase').value.trim(), k = $('fpRefKey').value.trim();
+  if(!k){ alert('先填参考站的 Key'); return; }
+  lsSet('probe_ref_base', b); lsSet('probe_ref_key', k);
+  $('btnRefModels').disabled = true;
+  try{
+    var resp = await fetchWithTimeout(b.replace(/\/+$/,'') + '/models', {headers:{'Authorization':'Bearer ' + k}}, 20000);
+    var j = await resp.json().catch(function(){ return null; });
+    if(!resp.ok) throw new Error(classify(resp.status, errText(j, '')));
+    $('fpRefModels').innerHTML = ((j && j.data) || []).map(function(x){ return '<option value="' + esc(x.id) + '">'; }).join('');
+    alert('参考站模型已拉取，在输入框里选一个');
+  }catch(e){ alert('拉取失败：' + (e && e.message || e)); }
+  $('btnRefModels').disabled = false;
+});
+var fpRunning = false, fpStop = false;
+$('btnFpStop').addEventListener('click', function(){ fpStop = true; });
+async function fpRunAll(b, k, model, progressEl){
+  var answers = {};
+  for(var i=0;i<FP_ITEMS.length;i++){
+    if(fpStop) break;
+    var it = FP_ITEMS[i];
+    $(progressEl).textContent = '进行中 ' + (i+1) + '/' + FP_ITEMS.length + '：' + it.name + '…';
+    var r;
+    try{ r = await chatCallAutoAt(b, k, model, it.q); }
+    catch(e){ r = {ok:false, msg:(e && e.name==='AbortError')? '超时' : ('网络错误：' + (e && e.message || e))}; }
+    if(!r.ok) return {ok:false, msg:'第 ' + (i+1) + ' 题（' + it.name + '）调用失败：' + classify(r.status||0, r.msg)};
+    answers[it.key] = { raw:r.text, val: it.val(r.text), retModel: r.model || '' };
+  }
+  return {ok:true, answers:answers};
+}
+$('btnBuildSample').addEventListener('click', async function(){
+  if(fpRunning) return;
+  var b = $('fpRefBase').value.trim(), k = $('fpRefKey').value.trim(), m = $('fpRefModel').value.trim();
+  if(!k){ alert('先填参考站的 Key'); return; }
+  if(!m){ alert('先选真品模型'); return; }
+  fpRunning = true; fpStop = false; $('btnBuildSample').disabled = true; $('btnFpStop').disabled = false;
+  var res = await fpRunAll(b, k, m, 'fpProgress');
+  if(res.ok && !fpStop){
+    lsSet('probe_fp_sample', { base:b, model:m, ts:Date.now(), answers:res.answers });
+    $('fpProgress').textContent = '真品样本建好了';
+    showSampleInfo();
+  } else {
+    $('fpProgress').textContent = fpStop? '已停止，样本未保存' : ('建样本失败：' + (res.msg || ''));
+  }
+  fpRunning = false; $('btnBuildSample').disabled = false; $('btnFpStop').disabled = true;
+});
+$('btnCompare').addEventListener('click', async function(){
+  if(fpRunning) return;
+  var s = fpSample();
+  if(!s){ alert('先建真品样本'); return; }
+  var m = $('fpTestModel').value.trim();
+  if(!m){ alert('先填被测模型'); return; }
+  if(!key()){ alert('先填主站（被测站）的 Key'); return; }
+  fpRunning = true; fpStop = false; $('btnCompare').disabled = true; $('btnFpStop').disabled = false;
+  $('fpResults').innerHTML = ''; $('fpVerdict').innerHTML = '';
+  var res = await fpRunAll(base(), key(), m, 'fpProgress');
+  if(!res.ok){ $('fpProgress').textContent = '对照失败：' + res.msg; fpRunning = false; $('btnCompare').disabled = false; $('btnFpStop').disabled = true; return; }
+  if(fpStop){ $('fpProgress').textContent = '已停止'; fpRunning = false; $('btnCompare').disabled = false; $('btnFpStop').disabled = true; return; }
+  $('fpProgress').textContent = '对照完成（真品：' + s.model + ' @ ' + s.base + '）';
+  var total = 0, n = 0, rows = '';
+  FP_ITEMS.forEach(function(it, idx){
+    var ref = s.answers[it.key], got = res.answers[it.key];
+    if(!ref || !got) return;
+    var score, badge;
+    if(it.type==='exact'){
+      score = (String(ref.val)===String(got.val))? 1 : 0;
+      badge = score? '<span class="badge ok">一致</span>' : '<span class="badge bad">不一致</span>';
+    } else {
+      score = bigramSim(ref.val, got.val);
+      badge = '<span class="badge' + (score>=0.5?' ok':'') + '">相似 ' + Math.round(score*100) + '%</span>';
+    }
+    total += score; n++;
+    rows += '<div class="mrow"><div class="mid"><div class="mname">' + (idx+1) + '. ' + esc(it.name) + '</div>'
+      + '<div class="mdetail">真品：' + esc(String(ref.val).slice(0,160)) + '<br>被测：' + esc(String(got.val).slice(0,160)) + '</div></div>' + badge + '</div>';
+  });
+  $('fpResults').innerHTML = rows;
+  var pct = n? (total/n*100) : 0;
+  var verdict, cls;
+  if(pct>=85){ verdict = '相似度 ' + pct.toFixed(1) + '%：高度一致，像同一个模型'; cls='ok'; }
+  else if(pct>=65){ verdict = '相似度 ' + pct.toFixed(1) + '%：大体一致，有个别差异，可能是渠道包装或随机波动'; cls='warn'; }
+  else if(pct>=45){ verdict = '相似度 ' + pct.toFixed(1) + '%：差异不小，不太像同一个模型'; cls='warn'; }
+  else { verdict = '相似度 ' + pct.toFixed(1) + '%：明显不像同一个模型，掺水嫌疑大'; cls='bad'; }
+  $('fpVerdict').innerHTML = '<div class="' + cls + '" style="font-size:15px; font-weight:700">' + esc(verdict) + '</div>'
+    + '<div class="mdetail" style="margin-top:4px">对照对象：被测 ' + esc(m) + ' vs 真品 ' + esc(s.model) + '。同一模型两次作答也会有随机差异，分数看个大概，重点看下面哪几题对不上。</div>';
+  fpRunning = false; $('btnCompare').disabled = false; $('btnFpStop').disabled = true;
+});
+showSampleInfo();
+
+render();
+</script>
+</body>
+</html>
